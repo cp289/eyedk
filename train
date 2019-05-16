@@ -12,9 +12,11 @@ DATANEG = 'data/train/non-face'
 NTHREADS = 8
 N_WEAK_CLASSIFIERS = 25
 
-TRAIN_FILE = 'training_data.pkl'
+TRAIN_DATA_FILE = 'training_data.pkl'
+CLASS_FILE = 'classifier.pkl'
 
-def getData(dirpos, dirneg, exts=('.jpg','.jpeg','.png','.pgm'), save=False, save_file=TRAIN_FILE ):
+def getData(dirpos, dirneg, exts=('.jpg','.jpeg','.png','.pgm'), save=False,
+        save_file=TRAIN_DATA_FILE ):
 
     # Recursively find all files in data directory
 
@@ -38,6 +40,7 @@ def getData(dirpos, dirneg, exts=('.jpg','.jpeg','.png','.pgm'), save=False, sav
 
     # TODO adjust scales to maintain aspect ratios
     scale = 1
+
     for f in pfiles:
         pimgs.append(cv.cvtColor(cv.resize(cv.imread(f), scale, scale), cv.COLOR_BGR2GRAY))
 
@@ -53,18 +56,25 @@ def getData(dirpos, dirneg, exts=('.jpg','.jpeg','.png','.pgm'), save=False, sav
     
     return data
     
-def train(t, train_file=TRAIN_FILE):
+def train(n_classifiers, train_data_file=TRAIN_DATA_FILE, class_file=CLASS_FILE):
+
     # Load old training file to make testing faster
-    if os.path.isfile(train_file):
-        print('Training data file found:', train_file)
-        with open(train_file, 'rb') as f:
+    if os.path.isfile(train_data_file):
+        print('Training data file found:', train_data_file)
+        with open(train_data_file, 'rb') as f:
             train_data, n_pos, n_neg = pickle.load(f)
     else:
         train_data, n_pos, n_neg = getData(DATAPOS, DATANEG, save=True)
 
-    # Initialize Viola Jones algorithm with 50 weak classifiers
-    vj = eyes.ViolaJones(50)
-    vj.train(train_data, n_pos, n_neg)
+    # Load pre-trained classifier if available
+    if os.path.isfile(class_file):
+        print('Classifier file found:', class_file)
+        vj = eyes.ViolaJones.load(class_file)
+    else:
+        # Initialize Viola Jones algorithm with 50 weak classifiers
+        vj = eyes.ViolaJones(n_classifiers)
+        vj.train(train_data, n_pos, n_neg)
+        vj.save(class_file)
 
 if __name__ == '__main__':
 

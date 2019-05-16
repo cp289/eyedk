@@ -99,6 +99,8 @@ class ViolaJones:
 
     def apply_features(self, features, train_data):
 
+        print('Applying features...')
+
         x = np.zeros( (len(features), len(train_data)) )
         y = np.array( list(map(lambda data: data[1], train_data)) )
 
@@ -191,11 +193,9 @@ class ViolaJones:
     # examples
     def train(self, training, n_pos, n_neg):
 
-        print('A')
         weights = np.zeros(len(training))
         train_data = []
 
-        print('B')
         for x in range(len(training)):
             train_data.append( (integral_img(training[x][0]), training[x][1]) )
 
@@ -205,13 +205,8 @@ class ViolaJones:
             else:
                 weights[x] = 0.5 / n_neg
 
-            print('WEIGHTS:', weights)
-
-        print('C')
         features = self.build_features(train_data[0][0].shape)
-        print('D')
         x, y = self.apply_features(features, train_data)
-        print('E')
 
         for t in range(self.T):
             # Normalize weights
@@ -224,16 +219,11 @@ class ViolaJones:
 
             beta = error / (1.0 - error)
 
-            print('ERROR:', error)
-            print('BETA:', beta)
-
             for i in range(len(accuracy)):
                 weights[i] = weights[i] * (beta ** (1-accuracy[i]))
 
             self.alphas.append(math.log( 1.0/beta ))
             self.classifiers.append(cl)
-
-        print('F')
 
     # Classify an image
     def classify(self, image):
