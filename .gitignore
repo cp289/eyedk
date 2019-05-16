@@ -1,0 +1,4 @@
+data/*
+!data/.empty
+__pycache__/*
+*.pkl

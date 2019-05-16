@@ -1,16 +1,18 @@
 #!/usr/bin/python3
 
+import math
 import numpy as np
 import cv2 as cv
+import pickle
 
 # Compute the integral image of an input image
 def integral_img(img):
     ii = np.zeros(img.shape)
     s = np.zeros(img.shape)
 
-    for y in range(img.shape):
+    for y in range(len(img)):
         for x in range(len(img[y])):
-            s[y][x] = s[y-1][x] + image[y][x] if y >= 1 else image[y][x]
+            s[y][x] = s[y-1][x] + img[y][x] if y >= 1 else img[y][x]
             ii[y][x] = ii[y][x-1] + s[y][x] if x >= 1 else s[y][x]
 
     return ii
@@ -37,8 +39,8 @@ class WeakClass:
 
     # Viola-Jones weak classifier function
     def classify(self, int_img):
-        feature = lambda ii: sum([p.compute_features(ii) for p in
-            self.regs_pos]) - sum([n.compute_features(ii) for n in
+        feature = lambda ii: sum([p.compute_feature(ii) for p in
+            self.regs_pos]) - sum([n.compute_feature(ii) for n in
                 self.regs_neg])
         return 1 if self.polarity*feature(int_img) < self.polarity*self.threshold else 0
 
@@ -54,11 +56,14 @@ class ViolaJones:
     # Build list of ordered pairs of features ( [pos], [neg] ). The values of
     # interest are of the form (sum(pos) - sum(neg))
     def build_features(self, img_shape):
+
+        print('Building features...')
+
         H, W = img_shape
         features = []
 
-        for w in range(1, width+1):
-            for h in range(1, height+1):
+        for w in range(1, W+1):
+            for h in range(1, H+1):
                 i = 0
                 while i + w < W:
                     j = 0
@@ -84,7 +89,7 @@ class ViolaJones:
                         if j + 3*h < H:
                             features.append( ([bottom], [bottom_2, current]) )
 
-                        if i + 2*w < W and j + 2*h < height:
+                        if i + 2*w < W and j + 2*h < H:
                             features.append( ([right, bottom], [current,
                                 bottom_right]) )
                         j += 1
@@ -93,17 +98,21 @@ class ViolaJones:
         return features
 
     def apply_features(self, features, train_data):
+
         x = np.zeros( (len(features), len(train_data)) )
-        y = np.array( map(lambda data: data[1], train_data) )
+        y = np.array( list(map(lambda data: data[1], train_data)) )
+
         i = 0
         for reg_pos, reg_neg in features:
-            feature = lambda ii: sum([p.compute_feature(ii) for p in reg_pos]) - sum([n.compute_features(ii) for n in reg_neg])
+            feature = lambda ii: sum([p.compute_feature(ii) for p in reg_pos]) - sum([n.compute_feature(ii) for n in reg_neg])
             x[i] = list(map(lambda data: feature(data[0]), train_data))
             i += 1
+
         return x, y
 
     # Train weak classifiers
     def train_weak(self, x, y, features, weights):
+
         ptotal = ntotal = 0
 
         for w, label in zip(weights, y):
@@ -119,9 +128,9 @@ class ViolaJones:
 
             if len(classifiers) % 1000 == 0 and len(classifiers) != 0:
                 print("Trained %d classifiers out of %d" % (len(classifiers),
-                    total_features) )
+                    nfeatures), end='\r' )
 
-            applied_feature = sorted(zip(weights, feature), key=lambda x: x[1])
+            applied_feature = sorted(zip(weights, feature, y), key=lambda x: x[1])
             pseen = nseen = 0
             pweights = nweights = 0
             min_error = math.inf
@@ -145,9 +154,11 @@ class ViolaJones:
                     nseen += 1
                     nweights += w
 
-            cl = WeakClassifier(best_feature[0], best_feature[1],
+            cl = WeakClass(best_feature[0], best_feature[1],
                     best_threshold, best_polarity)
             classifiers.append(cl)
+
+        print("Trained %d classifiers out of %d" % (len(classifiers), nfeatures) )
 
         return classifiers
 
@@ -159,11 +170,11 @@ class ViolaJones:
         best_accuracy = None
 
         for cl in classifiers:
-            error = 0
+            error = 0 # TODO does this actually make sense??
             accuracy = []
 
             for data, w in zip(train_data, weights):
-                correctness = abs(clf.classify(data[0]) - data[1])
+                correctness = abs(cl.classify(data[0]) - data[1])
                 accuracy.append(correctness)
                 error += w*correctness
 
@@ -180,9 +191,11 @@ class ViolaJones:
     # examples
     def train(self, training, n_pos, n_neg):
 
+        print('A')
         weights = np.zeros(len(training))
         train_data = []
 
+        print('B')
         for x in range(len(training)):
             train_data.append( (integral_img(training[x][0]), training[x][1]) )
 
@@ -190,10 +203,15 @@ class ViolaJones:
             if training[x][1] == 1:
                 weights[x] = 0.5 / n_pos
             else:
-                weights[x] = 0.5 / n_pos
+                weights[x] = 0.5 / n_neg
 
+            print('WEIGHTS:', weights)
+
+        print('C')
         features = self.build_features(train_data[0][0].shape)
+        print('D')
         x, y = self.apply_features(features, train_data)
+        print('E')
 
         for t in range(self.T):
             # Normalize weights
@@ -205,20 +223,40 @@ class ViolaJones:
                     train_data)
 
             beta = error / (1.0 - error)
+
+            print('ERROR:', error)
+            print('BETA:', beta)
+
             for i in range(len(accuracy)):
                 weights[i] = weights[i] * (beta ** (1-accuracy[i]))
 
             self.alphas.append(math.log( 1.0/beta ))
             self.classifiers.append(cl)
 
+        print('F')
+
     # Classify an image
     def classify(self, image):
         total = 0
-        ii = integral_image(image)
+        ii = integral_img(image)
 
         for alpha, cl in zip(self.alphas, self.classifiers):
             total += alpha * cl.classify(ii)
 
         return 1 if total >= 0.5 * sum(self.alphas) else 0
 
+    # Save this object to a file
+    def save(self, filename):
+        with open(filename, 'wb') as f:
+            pickle.dump(self, f)
+
+    # Load saved object (WARNING: this is insecure, make sure file is trusted)
+    @staticmethod
+    def load(filename):
+        with open(filename, 'rb') as f:
+            return pickle.load(f)
+
+
+if __name__ == '__main__':
+    print('L')
 

@@ -1,0 +1,77 @@
+#!/usr/bin/python3
+
+import os, sys
+import cv2 as cv
+import pickle
+
+import eyes
+
+DATAPOS = 'data/train/face'
+DATANEG = 'data/train/non-face'
+
+NTHREADS = 8
+N_WEAK_CLASSIFIERS = 25
+
+TRAIN_FILE = 'training_data.pkl'
+
+def getData(dirpos, dirneg, exts=('.jpg','.jpeg','.png','.pgm'), save=False, save_file=TRAIN_FILE ):
+
+    # Recursively find all files in data directory
+
+    print('Enumerating data files...')
+
+    pfiles = []
+    nfiles = []
+
+    for d in os.walk(dirpos):
+        pfiles += [ os.path.join(d[0], f) for f in d[2] if os.path.splitext(f)[1] in exts]
+
+    for d in os.walk(dirneg):
+        nfiles += [ os.path.join(d[0], f) for f in d[2] if os.path.splitext(f)[1] in exts]
+
+    # Read in all images
+
+    print('Loading image data...')
+
+    pimgs = []
+    nimgs = []
+
+    # TODO adjust scales to maintain aspect ratios
+    scale = 1
+    for f in pfiles:
+        pimgs.append(cv.cvtColor(cv.resize(cv.imread(f), scale, scale), cv.COLOR_BGR2GRAY))
+
+    for f in nfiles:
+        nimgs.append(cv.cvtColor(cv.resize(cv.imread(f), scale, scale), cv.COLOR_BGR2GRAY))
+
+    data = [ (p, 0) for p in pimgs ] + [ (n, 1) for n in nimgs ], len(pimgs), len(nimgs)
+
+    # Save file if necessary
+    if save:
+        with open(save_file, 'wb') as f:
+            pickle.dump(data, f)
+    
+    return data
+    
+def train(t, train_file=TRAIN_FILE):
+    # Load old training file to make testing faster
+    if os.path.isfile(train_file):
+        print('Training data file found:', train_file)
+        with open(train_file, 'rb') as f:
+            train_data, n_pos, n_neg = pickle.load(f)
+    else:
+        train_data, n_pos, n_neg = getData(DATAPOS, DATANEG, save=True)
+
+    # Initialize Viola Jones algorithm with 50 weak classifiers
+    vj = eyes.ViolaJones(50)
+    vj.train(train_data, n_pos, n_neg)
+
+if __name__ == '__main__':
+
+    # Parse number of weak classifiers from argv
+    assert len(sys.argv) <= 2, 'error: no more than 1 argument required'
+    if len(sys.argv) == 2:
+        N_WEAK_CLASSFIERS = int(sys.argv[1])
+
+    train(N_WEAK_CLASSIFIERS)
+
