@@ -42,10 +42,10 @@ def getData(dirpos, dirneg, exts=('.jpg','.jpeg','.png','.pgm'), save=False,
     scale = 1
 
     for f in pfiles:
-        pimgs.append(cv.cvtColor(cv.resize(cv.imread(f), scale, scale), cv.COLOR_BGR2GRAY))
+        pimgs.append(cv.cvtColor(cv.resize(cv.imread(f), fx=scale, fy=scale), cv.COLOR_BGR2GRAY))
 
     for f in nfiles:
-        nimgs.append(cv.cvtColor(cv.resize(cv.imread(f), scale, scale), cv.COLOR_BGR2GRAY))
+        nimgs.append(cv.cvtColor(cv.resize(cv.imread(f), fx=scale, fy=scale), cv.COLOR_BGR2GRAY))
 
     data = [ (p, 0) for p in pimgs ] + [ (n, 1) for n in nimgs ], len(pimgs), len(nimgs)
 
