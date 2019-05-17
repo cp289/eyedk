@@ -4,6 +4,7 @@ import math
 import numpy as np
 import cv2 as cv
 import pickle
+from sklearn.feature_selection import SelectPercentile, f_classif
 
 # Compute the integral image of an input image
 def integral_img(img):
@@ -207,6 +208,10 @@ class ViolaJones:
 
         features = self.build_features(train_data[0][0].shape)
         x, y = self.apply_features(features, train_data)
+
+        indices = SelectPercentile(f_classif, percentile=10).fit(x.T, y).get_support(indices=True)
+        x = x[indices]
+        features = features[indices]
 
         for t in range(self.T):
             # Normalize weights
