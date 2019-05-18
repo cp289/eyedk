@@ -1,7 +1,12 @@
+#Cole Turner and Charles Parham
+#CS365 Final Project
+#eyeRepaint.py
+
 import numpy as np
 import cv2
 from itertools import count
 
+#load cascading classifiers for opencv
 face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
 eye_cascade = cv2.CascadeClassifier('haarcascade_eye.xml')
 

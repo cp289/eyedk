@@ -1,4 +1,8 @@
 #!/usr/bin/python3
+#Cole Turner and Charles Parham 
+#CS365 Final Project
+#violaJones.py
+
 
 import math
 import numpy as np
