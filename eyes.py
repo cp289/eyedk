@@ -8,6 +8,7 @@ from sklearn.feature_selection import SelectPercentile, f_classif
 
 # Compute the integral image of an input image
 def integral_img(img):
+
     ii = np.zeros(img.shape)
     s = np.zeros(img.shape)
 
@@ -18,21 +19,32 @@ def integral_img(img):
 
     return ii
 
+
+# Object to keep track of rectangular regions
 class Rect:
+
+    # Set x,y coordinates and width, height
     def __init__(self, x, y, w, h):
+
         self.x = x
         self.y = y
         self.w = w
         self.h = h
 
-    # Compute region sum using integral image
+    # Compute sum of pixel intensities using integral image ii
     def compute_feature(self, ii):
+
         return ii[self.y+self.h][self.x+self.w] - ii[self.y+self.h][self.x] - ii[self.y][self.x+self.w] + ii[self.y][self.x]
+
 
 # Weak classifier
 class WeakClass:
 
+    # For each weak classifier, there is a threshold and polarity associated
+    # with it. We initialize the weak classifier with a set of positive regions,
+    # a set of negative regions and the threshold/polarity values
     def __init__(self, regs_pos, regs_neg, threshold, polarity):
+
         self.regs_pos = regs_pos
         self.regs_neg = regs_neg
         self.threshold = threshold
@@ -40,36 +52,42 @@ class WeakClass:
 
     # Viola-Jones weak classifier function
     def classify(self, int_img):
+
+        # Calculate the features of the regions for this classifier
         feature = lambda ii: sum([p.compute_feature(ii) for p in
             self.regs_pos]) - sum([n.compute_feature(ii) for n in
                 self.regs_neg])
+
         return 1 if self.polarity*feature(int_img) < self.polarity*self.threshold else 0
 
 
 # Class for the Viola Jones algorithm
 class ViolaJones:
 
+    # Initialize algorithm with the desired number of weak classifiers T
     def __init__(self, T = 10):
+
         self.T = T
         self.alphas = []
         self.classifiers = []
 
-    # Build list of ordered pairs of features ( [pos], [neg] ). The values of
-    # interest are of the form (sum(pos) - sum(neg))
+    # Build list of ordered pairs of features ( [pos], [neg] )
+    # This is converted to an interator in an attempt to save memory
     def build_features(self, img_shape):
 
-        print('Building features...')
-
         H, W = img_shape
+
         features = []
 
+        # We use three particular Haar features and calculate the feature values
+        # for every possible feature window over the image 
         for w in range(1, W+1):
             for h in range(1, H+1):
                 i = 0
                 while i + w < W:
                     j = 0
                     while j + h < H:
-                        # Generate regions
+                        # Generate rectangular regions for computing Haar features
                         current = Rect(i, j, w, h)
                         right = Rect(i+w, j, w, h)
                         bottom = Rect(i, j+h, w, h)
@@ -77,7 +95,7 @@ class ViolaJones:
                         bottom_2 = Rect(i, j+2*h, w, h)
                         bottom_right = Rect(i+w, j+h, w, h)
 
-                        # Add features if regions are within image
+                        # Add Haar features if regions are within image
                         if i + 2*w < W:
                             features.append( ([right], [current]) )
 
@@ -98,42 +116,52 @@ class ViolaJones:
 
         return features
 
+    # Apply all features 
     def apply_features(self, features, train_data):
 
-        print('Applying features...')
+        print('Computing features...')
 
-        x = np.zeros( (len(features), len(train_data)) )
-        y = np.array( list(map(lambda data: data[1], train_data)) )
+        applied_features = []
 
-        i = 0
+        # Compute features with integral image ii and positive & negative regions
         for reg_pos, reg_neg in features:
-            feature = lambda ii: sum([p.compute_feature(ii) for p in reg_pos]) - sum([n.compute_feature(ii) for n in reg_neg])
-            x[i] = list(map(lambda data: feature(data[0]), train_data))
-            i += 1
 
-        return x, y
+            feature_vals = []
+            for data in train_data:
+                ii = data[0]
+                total_sum = 0
+                for p in reg_pos:
+                    total_sum += p.compute_feature(ii)
+                for n in reg_neg:
+                    total_sum -= n.compute_feature(ii)
+
+                feature_vals.append(total_sum)
+
+            applied_features.append(feature_vals)
+
+        return np.array(applied_features)
 
     # Train weak classifiers
-    def train_weak(self, x, y, features, weights):
+    def train_weak(self, applied_features, labels, features, weights):
 
         ptotal = ntotal = 0
 
-        for w, label in zip(weights, y):
+        for w, label in zip(weights, labels):
             if label == 1:
                 ptotal += w
             else:
                 ntotal += w
 
         classifiers = []
-        nfeatures = x.shape[0]
+        numfeatures = applied_features.shape[0]
 
-        for index, feature in enumerate(x):
+        for index, feature in enumerate(applied_features):
 
             if len(classifiers) % 1000 == 0 and len(classifiers) != 0:
-                print("Trained %d classifiers out of %d" % (len(classifiers),
-                    nfeatures), end='\r' )
+                print("Trained %d/%d classifiers" % (len(classifiers),
+                    numfeatures), end='\r' )
 
-            applied_feature = sorted(zip(weights, feature, y), key=lambda x: x[1])
+            applied_feature = sorted(zip(weights, feature, labels), key=lambda x: x[1])
             pseen = nseen = 0
             pweights = nweights = 0
             min_error = math.inf
@@ -161,7 +189,7 @@ class ViolaJones:
                     best_threshold, best_polarity)
             classifiers.append(cl)
 
-        print("Trained %d classifiers out of %d" % (len(classifiers), nfeatures) )
+        print("Trained %d/%d classifiers" % (len(classifiers), numfeatures) )
 
         return classifiers
 
@@ -173,7 +201,7 @@ class ViolaJones:
         best_accuracy = None
 
         for cl in classifiers:
-            error = 0 # TODO does this actually make sense??
+            error = 0
             accuracy = []
 
             for data, w in zip(train_data, weights):
@@ -194,31 +222,41 @@ class ViolaJones:
     # examples
     def train(self, training, n_pos, n_neg):
 
+        print('Positive: ', n_pos)
+        print('Negative: ', n_neg)
+
         weights = np.zeros(len(training))
         train_data = []
 
-        for x in range(len(training)):
-            train_data.append( (integral_img(training[x][0]), training[x][1]) )
+        for i in range(len(training)):
+            # Note: training[i] is of the form (image, label)
+            # Generate new data set containing (integral_image, label) pairs
+            train_data.append( (integral_img(training[i][0]), training[i][1]) )
 
             # Initialize weights
-            if training[x][1] == 1:
-                weights[x] = 0.5 / n_pos
+            if training[i][1] == 1:
+                weights[i] = 0.5 / n_pos
             else:
-                weights[x] = 0.5 / n_neg
+                weights[i] = 0.5 / n_neg
 
         features = self.build_features(train_data[0][0].shape)
-        x, y = self.apply_features(features, train_data)
+        applied_features = self.apply_features(features, train_data)
+        labels = np.array( [ data[1] for data in train_data ] )
 
-        indices = SelectPercentile(f_classif, percentile=10).fit(x.T, y).get_support(indices=True)
-        x = x[indices]
+        # TODO fix this optimization?
+        '''
+        indices = SelectPercentile(f_classif, percentile=10).fit(applied_features.T, labels).get_support(indices=True)
+        print('TEST', type(features))
+        applied_features = applied_features[indices]
         features = features[indices]
+        '''
 
         for t in range(self.T):
             # Normalize weights
             weights = weights / np.linalg.norm(weights)
 
             # Train weak classifiers
-            weak_classifiers = self.train_weak(x, y, features, weights)
+            weak_classifiers = self.train_weak(applied_features, labels, features, weights)
             cl, error, accuracy = self.select_best(weak_classifiers, weights,
                     train_data)
 
@@ -230,8 +268,9 @@ class ViolaJones:
             self.alphas.append(math.log( 1.0/beta ))
             self.classifiers.append(cl)
 
-    # Classify an image
+    # Classify an image with trained classifier
     def classify(self, image):
+
         total = 0
         ii = integral_img(image)
 
@@ -242,16 +281,16 @@ class ViolaJones:
 
     # Save this object to a file
     def save(self, filename):
+
         with open(filename, 'wb') as f:
             pickle.dump(self, f)
+
+        print('Saved classifier to', filename)
 
     # Load saved object (WARNING: this is insecure, make sure file is trusted)
     @staticmethod
     def load(filename):
+
         with open(filename, 'rb') as f:
             return pickle.load(f)
-
-
-if __name__ == '__main__':
-    print('L')
 
